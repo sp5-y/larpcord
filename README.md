@@ -70,6 +70,9 @@ The **Banner** tab equips Discord **profile effects** (animated overlay), not a 
 
 After this update, effects only apply once Discord has a valid effect instance (so they no longer crash your profile). Equip again from Decorations → Banner, wait a second for the product to load, then reopen your profile.
 
+### Profile loop-crashes with FakeProfileThemes (3y3 bio)
+Vencord's FakeProfileThemes stores colors as invisible text in your bio. Larp used to rebuild your profile object on every read, which made Discord refresh forever. Update + inject; that loop is fixed, and the theme colors still apply.
+
 ### Profile crashes when I open it
 Usually caused by an incomplete profile effect. Update + inject, then:
 1. Decorations → Banner → **Remove**

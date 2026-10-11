@@ -386,7 +386,8 @@ const usernameProxyCache = new WeakMap<User, User & { __larpKey?: string; }>();
 let userProxyGeneration = 0;
 const displayProfileProxyCache = new WeakMap<object, unknown>();
 const messageCollectionProxyCache = new WeakMap<object, ReturnType<typeof MessageStore.getMessages>>();
-const wrappedProfileCache = new WeakMap<object, { gen: number; value: NonNullable<ReturnType<typeof UserProfileStore.getUserProfile>>; }>();
+const wrappedProfileCache = new Map<string, { sig: string; value: NonNullable<ReturnType<typeof UserProfileStore.getUserProfile>>; }>();
+let profileWrapDepth = 0;
 let profileWrapGeneration = 0;
 let messageCollectionGeneration = 0;
 let hiddenBadgeSetCache: Set<string> | null = null;
@@ -5026,33 +5027,53 @@ function patchDisplayProfileUtils() {
     });
 }
 
+function ownProfileWrapSig(profile: { bio?: string | null; profileEffectId?: string | null; connectedAccounts?: unknown[]; badges?: unknown[]; }, userId: string) {
+    return [
+        profileWrapGeneration,
+        userId,
+        profile.bio ?? "",
+        profile.profileEffectId ?? "",
+        profile.connectedAccounts?.length ?? 0,
+        profile.badges?.length ?? 0,
+    ].join("\u0001");
+}
+
 function wrapOwnUserProfile(profile: NonNullable<ReturnType<typeof UserProfileStore.getUserProfile>>, userId: string) {
-    const cached = wrappedProfileCache.get(profile);
-    if (cached?.gen === profileWrapGeneration) return cached.value;
+    // FakeProfileThemes returns a fresh virtualMerge proxy whenever the bio
+    // contains a 3y3 code. Keying the cache on that object made every
+    // getUserProfile() return a new profile and Discord re-rendered until it crashed.
+    const sig = ownProfileWrapSig(profile, userId);
+    const cached = wrappedProfileCache.get(userId);
+    if (cached?.sig === sig) return cached.value;
 
     const hideEffect = isProfileEffectHidden();
     const canSpoofEffect = !hideEffect && canSpoofLarpProfileEffect();
     const larpEffect = canSpoofEffect ? getLarpProfileEffect() : null;
     const joinDate = getCustomJoinDate();
-    const wrapped = Object.assign(Object.create(Object.getPrototypeOf(profile)), profile, {
-        badges: mergeProfileBadges(userId, profile.badges),
-        connectedAccounts: applyLarpConnections(profile.connectedAccounts),
-        ...(hideEffect ? {
-            profileEffect: null,
-            profileEffectId: null,
-            profileEffectExpiresAt: null,
-        } : canSpoofEffect && larpEffect ? {
-            profileEffect: larpEffect,
-            profileEffectId: (larpEffect as { id?: string; skuId?: string; }).id
-                ?? (larpEffect as { skuId?: string; }).skuId,
-            profileEffectExpiresAt: null,
-        } : {}),
-        ...(joinDate ? { createdAt: joinDate.toISOString() } : {}),
+    const badges = mergeProfileBadges(userId, profile.badges);
+    const connectedAccounts = applyLarpConnections(profile.connectedAccounts);
+    const createdAt = joinDate ? joinDate.toISOString() : undefined;
+
+    const wrapped = new Proxy(profile, {
+        get(target, prop, receiver) {
+            if (prop === "badges") return badges;
+            if (prop === "connectedAccounts") return connectedAccounts;
+            if (hideEffect && (prop === "profileEffect" || prop === "profileEffectId" || prop === "profileEffectExpiresAt")) {
+                return null;
+            }
+            if (canSpoofEffect && larpEffect && prop === "profileEffect") return larpEffect;
+            if (canSpoofEffect && larpEffect && prop === "profileEffectId") {
+                return (larpEffect as { id?: string; skuId?: string; }).id
+                    ?? (larpEffect as { skuId?: string; }).skuId;
+            }
+            if (canSpoofEffect && larpEffect && prop === "profileEffectExpiresAt") return null;
+            if (createdAt && prop === "createdAt") return createdAt;
+            if (joinDate && prop === "getCreatedAt") return () => joinDate;
+            return Reflect.get(target, prop, receiver);
+        },
     });
 
-    if (joinDate) wrapped.getCreatedAt = () => joinDate;
-
-    wrappedProfileCache.set(profile, { gen: profileWrapGeneration, value: wrapped });
+    wrappedProfileCache.set(userId, { sig, value: wrapped });
     return wrapped;
 }
 
@@ -5062,7 +5083,14 @@ function patchUserProfileStore() {
     UserProfileStore.getUserProfile = (userId: string) => {
         const profile = origGetUserProfile(userId);
         if (!profile || userId !== getCurrentUserId() || !settings.store.enabled) return profile;
-        return wrapOwnUserProfile(profile, userId);
+        // Object.assign/proxy reads can re-enter the store. Don't wrap again.
+        if (profileWrapDepth > 0) return profile;
+        profileWrapDepth++;
+        try {
+            return wrapOwnUserProfile(profile, userId);
+        } finally {
+            profileWrapDepth--;
+        }
     };
 
     unpatchFns.push(() => {
