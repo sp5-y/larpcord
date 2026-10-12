@@ -18,8 +18,7 @@ A [Vencord](https://github.com/Vendicated/Vencord) userplugin that customizes ho
 ## Requirements
 
 - [Discord Desktop](https://discord.com/download)
-- [Git](https://git-scm.com/download/win)
-- [Node.js](https://nodejs.org/) (LTS)
+- Windows. `auto-setup.bat` installs Git and Node.js if they are missing.
 
 ## Quick setup
 

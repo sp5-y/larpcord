@@ -87,18 +87,23 @@ if not exist "%PATCH_SCRIPT%" (
     goto :failed
 )
 
-call :require_cmd git "https://git-scm.com/download/win" || goto :failed
-call :require_cmd node "https://nodejs.org/" || goto :failed
+call :ensure_tool git
+if errorlevel 1 goto :failed
+call :ensure_tool node
+if errorlevel 1 goto :failed
 
 if /I "%MODE%"=="patch" (
-    call :patch_discord || goto :failed
+    call :patch_discord
+    if errorlevel 1 goto :failed
     goto :finish
 )
 
-call :ensure_pnpm || goto :failed
+call :ensure_pnpm
+if errorlevel 1 goto :failed
 
 if /I not "%MODE%"=="rebuild" if /I not "%MODE%"=="inject" (
-    call :clone_or_update_vencord || goto :failed
+    call :clone_or_update_vencord
+    if errorlevel 1 goto :failed
 )
 
 if /I "%MODE%"=="inject" (
@@ -109,15 +114,19 @@ if /I "%MODE%"=="inject" (
     )
 )
 
-call :install_plugin || goto :failed
-call :install_deps || goto :failed
-call :build_vencord || goto :failed
+call :install_plugin
+if errorlevel 1 goto :failed
+call :install_deps
+if errorlevel 1 goto :failed
+call :build_vencord
+if errorlevel 1 goto :failed
 
 if /I "%MODE%"=="inject" set "NOINJECT="
 if defined NOINJECT goto :finish
 if /I "%MODE%"=="rebuild" goto :finish
 
-call :patch_discord || goto :failed
+call :patch_discord
+if errorlevel 1 goto :failed
 goto :finish
 
 :show_help
@@ -137,39 +146,57 @@ echo.
 pause
 exit /b 0
 
-:require_cmd
+:ensure_tool
+echo [..] checking %~1...
+set "TOOLRESULT=%TEMP%\larp-ensure-%~1.txt"
+if exist "%TOOLRESULT%" del /f /q "%TOOLRESULT%"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%ROOT%ensure-tools.ps1" -Tool %~1 -ResultFile "%TOOLRESULT%"
+if errorlevel 1 (
+    echo [ERROR] could not install %~1
+    exit /b 1
+)
+set "TOOLLINE="
+if exist "%TOOLRESULT%" set /p TOOLLINE=<"%TOOLRESULT%"
+if defined TOOLLINE set "PATH=%TOOLLINE%;%PATH%"
 where %~1 >nul 2>&1
-if not errorlevel 1 exit /b 0
-echo [ERROR] %~1 not on PATH - %~2
-exit /b 1
+if errorlevel 1 (
+    echo [ERROR] %~1 is still not available after install
+    exit /b 1
+)
+echo [OK] %~1
+exit /b 0
 
 :ensure_pnpm
-where pnpm >nul 2>&1
+call :add_npm_global_path
+where pnpm.cmd >nul 2>&1
 if not errorlevel 1 (
     echo [OK] pnpm
     exit /b 0
 )
 
 echo [..] pnpm missing - installing via npm (this can take 1-2 minutes)...
-where npm >nul 2>&1 || (
+where npm.cmd >nul 2>&1
+if errorlevel 1 (
     echo [ERROR] npm not found. Reinstall Node.js from https://nodejs.org/
     exit /b 1
 )
 
-call npm install -g pnpm@9
+call npm.cmd install -g pnpm@9
 if errorlevel 1 (
     echo [WARN] npm global install failed, trying corepack...
-    where corepack >nul 2>&1 || (
+    where corepack.cmd >nul 2>&1
+    if errorlevel 1 (
         echo [ERROR] could not install pnpm
         exit /b 1
     )
     echo [..] corepack enable...
-    call corepack enable
+    call corepack.cmd enable
     echo [..] corepack prepare pnpm@9.15.0 --activate
-    call corepack prepare pnpm@9.15.0 --activate
+    call corepack.cmd prepare pnpm@9.15.0 --activate
 )
 
-where pnpm >nul 2>&1
+call :add_npm_global_path
+where pnpm.cmd >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] pnpm still not available after install
     echo         Try manually: npm install -g pnpm@9
@@ -177,7 +204,16 @@ if errorlevel 1 (
 )
 
 echo [OK] pnpm ready
-pnpm --version
+call pnpm.cmd --version
+exit /b 0
+
+:add_npm_global_path
+if exist "%APPDATA%\npm\pnpm.cmd" set "PATH=%APPDATA%\npm;%PATH%"
+where npm.cmd >nul 2>&1
+if errorlevel 1 exit /b 0
+set "NPM_PREFIX="
+for /f "delims=" %%P in ('npm.cmd prefix -g 2^>nul') do set "NPM_PREFIX=%%P"
+if defined NPM_PREFIX set "PATH=%NPM_PREFIX%;%PATH%"
 exit /b 0
 
 :clone_or_update_vencord
@@ -224,13 +260,13 @@ exit /b 0
 :install_deps
 echo [..] pnpm install --frozen-lockfile
 pushd "%VENCORD_DIR%"
-call pnpm install --frozen-lockfile
+call pnpm.cmd install --frozen-lockfile
 set "ERR=!ERRORLEVEL!"
 popd
 if not "!ERR!"=="0" (
     echo [WARN] retrying without --frozen-lockfile...
     pushd "%VENCORD_DIR%"
-    call pnpm install
+    call pnpm.cmd install
     set "ERR=!ERRORLEVEL!"
     popd
 )
@@ -244,7 +280,7 @@ exit /b 0
 :build_vencord
 echo [..] pnpm build
 pushd "%VENCORD_DIR%"
-call pnpm build
+call pnpm.cmd build
 set "ERR=!ERRORLEVEL!"
 popd
 if not "!ERR!"=="0" (
