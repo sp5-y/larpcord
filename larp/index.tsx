@@ -3,15 +3,15 @@
 import definePlugin, { OptionType } from "@utils/types";
 import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
-import { RenderModalProps, User } from "@vencord/discord-types";
+import { ConnectedAccount, RenderModalProps, User } from "@vencord/discord-types";
 import type { Embed, Message } from "@vencord/discord-types";
 import { waitFor, filters, findByCodeLazy, findByPropsLazy } from "@webpack";
 import {
-    AuthenticationStore, ConnectedAccount, Constants, FluxDispatcher,
+    AuthenticationStore, Constants, FluxDispatcher,
     openModal, closeModal, Modal, TextInput, Button, Forms, Text,
     DisplayProfileUtils, ScrollerThin, UserProfileStore, UserStore,
     UsernameUtils, useStateFromStores, TabBar, useState, useRef, useEffect, useMemo,
-    showToast, Toasts, ReactDOM, RestAPI, MessageStore, Parser,
+    showToast, ReactDOM, RestAPI, MessageStore, Parser,
 } from "@webpack/common";
 
 interface BadgeEntry {
@@ -1848,11 +1848,11 @@ function equipProfileEffect(item: ShopProfileEffect | null) {
             }, item.name);
 
             if (!ready) {
-                showToast("Banner effect still loading — click it again in a second", Toasts.Type.SUCCESS);
+                showToast({ text: "Banner effect still loading — click it again in a second", variant: "success" });
             }
         } catch (e) {
             console.warn("larp: equip profile effect failed", e);
-            showToast("Couldn't load that banner effect", Toasts.Type.FAILURE);
+            showToast({ text: "Couldn't load that banner effect", variant: "critical" });
         }
     })();
 }
@@ -3854,7 +3854,7 @@ function ConnectionsSection() {
             ? normalizeDomain(newName)
             : newName.trim();
         if (!name) {
-            showToast(connectionNeedsDomain(pickType) ? "Enter a domain" : "Enter a handle", Toasts.Type.FAILURE);
+            showToast({ text: connectionNeedsDomain(pickType) ? "Enter a domain" : "Enter a handle", variant: "critical" });
             return;
         }
 
@@ -4854,7 +4854,7 @@ const BadgeModal = ErrorBoundary.wrap(function BadgeModal(props: RenderModalProp
                     onClick: () => {
                         if (!confirm("Reset all larp settings? This clears your username, badges, decorations, and connections.")) return;
                         resetLarpConfig();
-                        showToast("All settings reset", Toasts.Type.SUCCESS);
+                        showToast({ text: "All settings reset", variant: "success" });
                     },
                 },
                 {
